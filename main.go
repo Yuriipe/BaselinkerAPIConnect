@@ -2,11 +2,17 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 )
+
+type Invtr struct {
+	Status      string
+	Inventories []map[string]interface{}
+}
 
 var payload = []byte(`method=getInventories`)
 
@@ -25,9 +31,9 @@ func getJSON(payload []byte) []byte {
 	req.Header.Set("Content-type", "application/x-www-form-urlencoded")
 
 	client := &http.Client{}
-	response, err := client.Do(req)
-	if err != nil {
-		panic(err)
+	response, err0 := client.Do(req)
+	if err0 != nil {
+		panic(err0)
 	}
 
 	defer response.Body.Close()
@@ -37,6 +43,19 @@ func getJSON(payload []byte) []byte {
 		panic(err)
 	}
 
+	var inven Invtr
+
+	err4 := json.Unmarshal(ResponseBody, &inven)
+	if err4 != nil {
+		panic("Unable to unmarshall")
+	}
+
+	fmt.Println(inven)
+	return ResponseBody
+}
+
+func createFile(arr []byte) {
+
 	file, err := os.Create("JSON.txt")
 	if err != nil {
 		panic("Unable to create file")
@@ -44,13 +63,10 @@ func getJSON(payload []byte) []byte {
 
 	defer file.Close()
 
-	_, err2 := file.WriteString(string(ResponseBody))
+	_, err2 := file.WriteString(string(arr))
 	if err2 != nil {
 		panic("Unable to write to file: JSON.txt")
 	}
-
-	fmt.Println(string(ResponseBody))
-	return ResponseBody
 }
 
 //func transformJSON(){}
@@ -58,5 +74,5 @@ func getJSON(payload []byte) []byte {
 //func pushJSONtoSQL() {}
 
 func main() {
-	getJSON(payload)
+	createFile(getJSON(payload))
 }
