@@ -5,15 +5,16 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 )
 
-func main() {
+var payload = []byte(`method=getInventories`)
+
+func getJSON(payload []byte) []byte {
 	var (
 		Url     string = "https://api.baselinker.com/connector.php"
 		Tok_val string = "4005311-4011334-B6DI5PO6AM7GZ1D80O21R8W7OFFOH41W147FM3KTNHBJ9ZDHFLX0NONB1OZPWLXG"
 	)
-
-	payload := []byte(`method=getInventories`)
 
 	req, err := http.NewRequest("POST", Url, bytes.NewBuffer(payload))
 	if err != nil {
@@ -31,10 +32,31 @@ func main() {
 
 	defer response.Body.Close()
 
-	responseBody, err := io.ReadAll(response.Body)
+	ResponseBody, err := io.ReadAll(response.Body)
 	if err != nil {
 		panic(err)
 	}
-	fmt.Println(string(responseBody))
 
+	file, err := os.Create("JSON.txt")
+	if err != nil {
+		panic("Unable to create file")
+	}
+
+	defer file.Close()
+
+	_, err2 := file.WriteString(string(ResponseBody))
+	if err2 != nil {
+		panic("Unable to write to file: JSON.txt")
+	}
+
+	fmt.Println(string(ResponseBody))
+	return ResponseBody
+}
+
+//func transformJSON(){}
+
+//func pushJSONtoSQL() {}
+
+func main() {
+	getJSON(payload)
 }
