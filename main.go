@@ -131,7 +131,9 @@ func main() {
 		fmt.Fprintf(os.Stderr, "getJSON: %v\n", err)
 		os.Exit(1)
 	}
-	fmt.Println(products)
+	for _, product := range products {
+		fmt.Printf("%+v\n", product)
+	}
 	// crtFile(resultJSON)
 	// dataBaseQuery()
 }
