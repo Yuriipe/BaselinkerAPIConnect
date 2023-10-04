@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strconv"
 
 	_ "github.com/go-sql-driver/mysql"
 )
@@ -19,45 +20,76 @@ type Invtr struct {
 
 var payload = []byte(`method=getInventoryProductsStock&parameters=%7B%22inventory_id%22%3A%2223251%22%7D`)
 
-func getJSON(payload []byte) []byte {
+type baselinkerValue struct {
+	ID    string
+	Value int
+}
+
+type baselinkerProduct struct {
+	ProductID    int
+	Stock        []baselinkerValue
+	Reservations []baselinkerValue
+}
+
+type N = map[string]interface{}
+
+func getBaselinkerJSON(payload []byte) ([]baselinkerProduct, error) {
 	var (
-		Url     string = "https://api.baselinker.com/connector.php"
-		Tok_val string = "4005311-4011334-B6DI5PO6AM7GZ1D80O21R8W7OFFOH41W147FM3KTNHBJ9ZDHFLX0NONB1OZPWLXG"
+		baselinkerUrl      string = "https://api.baselinker.com/connector.php"
+		baselinkerUrlToken string = "4005311-4011334-B6DI5PO6AM7GZ1D80O21R8W7OFFOH41W147FM3KTNHBJ9ZDHFLX0NONB1OZPWLXG"
 	)
 
-	req, err := http.NewRequest("POST", Url, bytes.NewBuffer(payload))
+	req, err := http.NewRequest(http.MethodPost, baselinkerUrl, bytes.NewBuffer(payload))
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 
-	req.Header.Set("X-BLToken", Tok_val)
+	req.Header.Set("X-BLToken", baselinkerUrlToken)
 	req.Header.Set("Content-type", "application/x-www-form-urlencoded")
 
 	client := &http.Client{}
-	response, err0 := client.Do(req)
-	if err0 != nil {
-		panic(err0)
+	response, err := client.Do(req)
+	if err != nil {
+		return nil, err
 	}
-
 	defer response.Body.Close()
 
-	ResponseBody, err := io.ReadAll(response.Body)
+	responseBody, err := io.ReadAll(response.Body)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 
-	var inven Invtr
+	res := N{}
 
-	err4 := json.Unmarshal(ResponseBody, &inven)
-	if err4 != nil {
-		panic("Unable to unmarshall")
+	if err := json.Unmarshal(responseBody, &res); err != nil {
+		return nil, err
+	}
+	products := []baselinkerProduct{}
+	for k, v := range res["products"].(N) {
+		product := baselinkerProduct{}
+		if v, err := strconv.Atoi(k); err == nil {
+			product.ProductID = v
+		} else {
+			return nil, err
+		}
+
+		product.Stock = toBaselinkerValue(v.(N), "stock")
+		product.Reservations = toBaselinkerValue(v.(N), "reservations")
+		products = append(products, product)
 	}
 
-	fmt.Println(inven)
-	return ResponseBody
+	return products, nil
 }
 
-var ResultJSON = getJSON(payload)
+func toBaselinkerValue(node N, key string) []baselinkerValue {
+	values := []baselinkerValue{}
+	for k, val := range node[key].(N) {
+		value := baselinkerValue{ID: k}
+		value.Value = int(val.(float64))
+		values = append(values, value)
+	}
+	return values
+}
 
 func crtFile(arr []byte) {
 
@@ -68,8 +100,7 @@ func crtFile(arr []byte) {
 
 	defer file.Close()
 
-	_, err2 := file.WriteString(string(arr))
-	if err2 != nil {
+	if _, err := file.WriteString(string(arr)); err != nil {
 		panic("Unable to write to file")
 	}
 }
@@ -95,6 +126,12 @@ func dataBaseQuery() {
 //func pushJSONtoSQL() {}
 
 func main() {
-	crtFile(ResultJSON)
-	dataBaseQuery()
+	products, err := getBaselinkerJSON(payload)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "getJSON: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Println(products)
+	// crtFile(resultJSON)
+	// dataBaseQuery()
 }
