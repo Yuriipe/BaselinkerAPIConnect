@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -8,7 +9,12 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 )
 
-/*func databaseQuery() {
+func main() {
+	manipulateJSON()
+	JSONtoStruct()
+}
+
+func databaseQuery() {
 	fmt.Println("MySQL tutorial")
 
 	db, err := sql.Open("mysql", "srv56775_APIgolang:APIgolang123!@tcp(h27.seohost.pl:3306)/srv56775_APIgolang")
@@ -33,17 +39,17 @@ import (
 	if err == nil {
 		fmt.Println("Succesfully completed")
 	}
-}*/
+}
 
-func main() {
-	//databaseQuery()
+func manipulateJSON() {
 	readJSON()
-	var revJSON map[string]interface{}
-	err := json.Unmarshal(readJSON(), &revJSON)
+	var mapingJSON map[string]interface{}
+	err := json.Unmarshal(readJSON(), &mapingJSON)
 	if err != nil {
 		panic("Unable to unmarshal. Try more.")
 	}
-	resp := revJSON
+
+	resp := mapingJSON
 	b, err4 := json.MarshalIndent(resp, "", " ")
 	if err4 != nil {
 		panic("Unable to marshalIndent")
@@ -65,26 +71,46 @@ func main() {
 
 }
 
-/*type blInventory struct {
-	Status   string   `json:"struct"`
-	Products Products `json:"inventories"`
-}
-type Products struct {
-	IdAdd difer `json:"52576583"`
-}
-type difer struct {
-	Id     int            `json:"id"`
-	Ean    string         `json:"ean"`
-	Sku    string         `json:"sku"`
-	Name   string         `json:"name"`
-	Stock  map[string]int `json:"stock"`
-	Prices map[int]int    `json:"prices"`
-}*/
-
 func readJSON() []byte {
 	Body, err := os.ReadFile("/home/yubo/Documents/Baselinker API/API_test/pro_dat.txt")
 	if err != nil {
 		panic("Unable to read")
 	}
 	return Body
+}
+
+type getInventoryProductsStockBL struct {
+	//Status   string
+	Products struct {
+		Num52576583 struct {
+			ProductID int `json:"product_id"`
+			Stock     struct {
+				Bl27589 int `json:"bl_27589"`
+				Bl52598 int `json:"bl_52598"`
+				Bl55473 int `json:"bl_55473"`
+			} `json:"stock"`
+			Reservations struct {
+				Bl27589 int `json:"bl_27589"`
+				Bl52598 int `json:"bl_52598"`
+				Bl55473 int `json:"bl_55473"`
+			} `json:"reservations"`
+		} `json:"52576583"`
+	} `json:"products"`
+}
+
+func JSONtoStruct() {
+	jsonInput, err := os.ReadFile("/home/yubo/Documents/Baselinker API/API_test/pro_dat.txt")
+	if err != nil {
+		panic("Unable to read nice_JSON")
+	}
+
+	fmt.Println(jsonInput)
+	var transformedJson getInventoryProductsStockBL
+
+	err2 := json.Unmarshal(jsonInput, &transformedJson)
+	if err2 != nil {
+		panic("Unable to unmarshal JSON")
+	}
+	fmt.Println(transformedJson)
+
 }
