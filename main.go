@@ -2,11 +2,14 @@ package main
 
 import (
 	"bytes"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+
+	_ "github.com/go-sql-driver/mysql"
 )
 
 type Invtr struct {
@@ -14,7 +17,7 @@ type Invtr struct {
 	Inventories []map[string]interface{}
 }
 
-var payload = []byte(`method=getInventories`)
+var payload = []byte(`method=getInventoryProductsStock&parameters=%7B%22inventory_id%22%3A%2223251%22%7D`)
 
 func getJSON(payload []byte) []byte {
 	var (
@@ -54,9 +57,11 @@ func getJSON(payload []byte) []byte {
 	return ResponseBody
 }
 
-func createFile(arr []byte) {
+var ResultJSON = getJSON(payload)
 
-	file, err := os.Create("JSON.txt")
+func crtFile(arr []byte) {
+
+	file, err := os.Create("pro_dat.txt")
 	if err != nil {
 		panic("Unable to create file")
 	}
@@ -65,14 +70,31 @@ func createFile(arr []byte) {
 
 	_, err2 := file.WriteString(string(arr))
 	if err2 != nil {
-		panic("Unable to write to file: JSON.txt")
+		panic("Unable to write to file")
 	}
 }
 
-//func transformJSON(){}
+func dataBaseQuery() {
+	dbq, err := sql.Open("mysql", "srv56775_APIgolang:APIgolang123!@tcp(h27.seohost.pl:3306)/srv56775_APIgolang")
+	if err != nil {
+		panic("Unable to connect to MySQL")
+	}
+
+	defer dbq.Close()
+
+	SQLQ := "LOAD DATA LOCAL INFILE '/home/yubo/Documents/Baselinker API/API_test/pro_dat.txt' into table test_table(jsondata);"
+	impSQL, err3 := dbq.Query(SQLQ)
+	if err3 != nil {
+		panic(err3)
+	}
+	defer impSQL.Close()
+
+	fmt.Println("Done")
+}
 
 //func pushJSONtoSQL() {}
 
 func main() {
-	createFile(getJSON(payload))
+	crtFile(ResultJSON)
+	dataBaseQuery()
 }
