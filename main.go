@@ -13,11 +13,6 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 )
 
-type Invtr struct {
-	Status      string
-	Inventories []map[string]interface{}
-}
-
 var payload = []byte(`method=getInventoryProductsStock&parameters=%7B%22inventory_id%22%3A%2223251%22%7D`)
 
 type baselinkerValue struct {
@@ -26,13 +21,14 @@ type baselinkerValue struct {
 }
 
 type baselinkerProduct struct {
-	ProductID    int
-	Stock        []baselinkerValue
-	Reservations []baselinkerValue
+	ProductID int
+	Stock     []baselinkerValue
+	//Reservations []baselinkerValue
 }
 
 type N = map[string]interface{}
 
+// getting JSON from BL
 func getBaselinkerJSON(payload []byte) ([]baselinkerProduct, error) {
 	var (
 		baselinkerUrl      string = "https://api.baselinker.com/connector.php"
@@ -46,7 +42,7 @@ func getBaselinkerJSON(payload []byte) ([]baselinkerProduct, error) {
 
 	req.Header.Set("X-BLToken", baselinkerUrlToken)
 	req.Header.Set("Content-type", "application/x-www-form-urlencoded")
-
+	//defining client to connect to BL
 	client := &http.Client{}
 	response, err := client.Do(req)
 	if err != nil {
@@ -54,16 +50,21 @@ func getBaselinkerJSON(payload []byte) ([]baselinkerProduct, error) {
 	}
 	defer response.Body.Close()
 
+	//recieving response and pushing it into response body
 	responseBody, err := io.ReadAll(response.Body)
 	if err != nil {
 		return nil, err
 	}
 
+	//defining variable to operate the response
 	res := N{}
 
+	//unmarshalling JSON into res
 	if err := json.Unmarshal(responseBody, &res); err != nil {
 		return nil, err
 	}
+
+	//assigning value to "products variable"
 	products := []baselinkerProduct{}
 	for k, v := range res["products"].(N) {
 		product := baselinkerProduct{}
@@ -74,7 +75,7 @@ func getBaselinkerJSON(payload []byte) ([]baselinkerProduct, error) {
 		}
 
 		product.Stock = toBaselinkerValue(v.(N), "stock")
-		product.Reservations = toBaselinkerValue(v.(N), "reservations")
+		//product.Reservations = toBaselinkerValue(v.(N), "reservations")
 		products = append(products, product)
 	}
 
@@ -91,20 +92,6 @@ func toBaselinkerValue(node N, key string) []baselinkerValue {
 	return values
 }
 
-func crtFile(arr []byte) {
-
-	file, err := os.Create("pro_dat.txt")
-	if err != nil {
-		panic("Unable to create file")
-	}
-
-	defer file.Close()
-
-	if _, err := file.WriteString(string(arr)); err != nil {
-		panic("Unable to write to file")
-	}
-}
-
 func dataBaseQuery() {
 	dbq, err := sql.Open("mysql", "srv56775_APIgolang:APIgolang123!@tcp(h27.seohost.pl:3306)/srv56775_APIgolang")
 	if err != nil {
@@ -113,17 +100,29 @@ func dataBaseQuery() {
 
 	defer dbq.Close()
 
-	SQLQ := "LOAD DATA LOCAL INFILE '/home/yubo/Documents/Baselinker API/API_test/pro_dat.txt' into table test_table(jsondata);"
-	impSQL, err3 := dbq.Query(SQLQ)
-	if err3 != nil {
-		panic(err3)
+	err = dbq.Ping()
+	if err != nil {
+		fmt.Println("Error verifying connection with DB")
+		panic(err.Error())
+	}
+	fmt.Println("Connection sucessful")
+	defer dbq.Close()
+
+	SQLQ := "INSERT INTO `test_table` (`ID`, `Stock`) VALUES (?, ?);"
+	impSQL, err := dbq.Prepare(SQLQ)
+	if err != nil {
+		panic(err)
 	}
 	defer impSQL.Close()
 
+	for _, value := range baselinkerProduct {
+		_, err := impSQL.Exec(value.ProductID, value.Stock)
+		if err != nil {
+			panic(err)
+		}
+	}
 	fmt.Println("Done")
 }
-
-//func pushJSONtoSQL() {}
 
 func main() {
 	products, err := getBaselinkerJSON(payload)
@@ -134,6 +133,5 @@ func main() {
 	for _, product := range products {
 		fmt.Printf("%+v\n", product)
 	}
-	// crtFile(resultJSON)
-	// dataBaseQuery()
+	dataBaseQuery()
 }
