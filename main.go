@@ -115,12 +115,6 @@ func dataBaseQuery() {
 	}
 	defer impSQL.Close()
 
-	for _, value := range baselinkerProduct {
-		_, err := impSQL.Exec(value.ProductID, value.Stock)
-		if err != nil {
-			panic(err)
-		}
-	}
 	fmt.Println("Done")
 }
 
@@ -133,5 +127,12 @@ func main() {
 	for _, product := range products {
 		fmt.Printf("%+v\n", product)
 	}
-	dataBaseQuery()
+	//dataBaseQuery()
 }
+
+/*
+1. Find a struct with unmarshalled JSON
+2. Export struct
+3. Define sql.Prepare query
+4. test sql query
+*/
