@@ -127,6 +127,8 @@ func main() {
 	for _, product := range products {
 		fmt.Printf("%+v\n", product)
 	}
+
+	fmt.Println()
 	//dataBaseQuery()
 }
 
