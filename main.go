@@ -20,6 +20,8 @@ type Invtr struct {
 
 var payload = []byte(`method=getInventoryProductsStock&parameters=%7B%22inventory_id%22%3A%2223251%22%7D`)
 
+// func payloadCrt(method string, parameters string)
+
 type baselinkerValue struct {
 	ID    string
 	Value int
@@ -132,8 +134,9 @@ func main() {
 		os.Exit(1)
 	}
 	for _, product := range products {
-		fmt.Printf("%+v\n", product)
+		fmt.Println(product.ProductID, product.Stock[0])
 	}
+
 	// crtFile(resultJSON)
 	// dataBaseQuery()
 }
