@@ -46,6 +46,7 @@ func getTokenFromWeb(config *oauth2.Config) *oauth2.Token {
 	return tok
 }
 
+// go and go
 // Retrieves a token from a local file.
 func tokenFromFile(file string) (*oauth2.Token, error) {
 	f, err := os.Open(file)
