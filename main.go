@@ -3,12 +3,14 @@ package main
 import (
 	"bytes"
 	"database/sql"
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 
 	_ "github.com/go-sql-driver/mysql"
 )
@@ -127,16 +129,41 @@ func main() {
 		os.Exit(1)
 	}
 	for _, product := range products {
-		fmt.Println(product.ProductID, product.Stock[0])
+		fmt.Println(product.ProductID, product.Stock)
+	}
+
+	file, err := os.Create("prod.csv")
+	if err != nil {
+		panic(err)
+	}
+	defer file.Close()
+
+	writer := csv.NewWriter(file)
+	defer writer.Flush()
+
+	// Write the header row
+	writer.Write([]string{"id", "store_id", "quantity", "store_id", "quantity", "store_id", "quantity", "store_id", "quantity", "store_id", "quantity", "store_id", "quantity"})
+
+	// Write data rows
+	for _, product := range products {
+		// return "product.Stock" values in slice of string format
+		stockStr := make([]string, len(product.Stock))
+		for k, value := range product.Stock {
+			stockStr[k] = fmt.Sprint(value.ID, ",", value.Value)
+		}
+		fmt.Println(stockStr)
+		stockStrCnv := strings.Join(stockStr, ",")
+		// creates a slice of strings to add to CSV file prod.csv
+		row := []string{strconv.Itoa(product.ProductID), ",", stockStrCnv}
+		rowCnv := strings.Join(row, "")
+		row = strings.Split(rowCnv, ",")
+		err = writer.Write(row)
+		if err != nil {
+			panic(err)
+		}
+
 	}
 
 	// crtFile(resultJSON)
 	// dataBaseQuery()
 }
-
-/*
-1. Find a struct with unmarshalled JSON
-2. Export struct
-3. Define sql.Prepare query
-4. test sql query
-*/
