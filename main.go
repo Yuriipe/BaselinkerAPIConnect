@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"database/sql"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
@@ -13,11 +12,10 @@ import (
 	"strings"
 
 	_ "github.com/go-sql-driver/mysql"
+	"github.com/tkanos/gonfig"
 )
 
 var payload = []byte(`method=getInventoryProductsStock&parameters=%7B%22inventory_id%22%3A%2223251%22%7D`)
-
-// func payloadCrt(method string, parameters string)
 
 type baselinkerValue struct {
 	ID    string
@@ -30,22 +28,35 @@ type baselinkerProduct struct {
 	//Reservations []baselinkerValue
 }
 
+type Authorization struct {
+	URL   string `json:"url"`
+	Token string `json:"token"`
+}
+
+// contains different baselinker APi queries, can be extended as needed
+type Payload struct {
+	GetInventories             []string `json:"getInventories"`
+	GetInventoryProductsStock  []string `json:"getInventoryProductsStock"`
+	GetInventoryProductsPrices []string `json:"getInventoryProductsPrices"`
+}
+
+type PriceChanger struct {
+	StartProductAmount  int
+	FinishProductAmount int
+}
+
 type N = map[string]interface{}
 
 // getting JSON from BL
-func getBaselinkerJSON(payload []byte) ([]baselinkerProduct, error) {
-	var (
-		baselinkerUrl      string = "https://api.baselinker.com/connector.php"
-		baselinkerUrlToken string = "4005311-4011334-B6DI5PO6AM7GZ1D80O21R8W7OFFOH41W147FM3KTNHBJ9ZDHFLX0NONB1OZPWLXG"
-	)
-
-	req, err := http.NewRequest(http.MethodPost, baselinkerUrl, bytes.NewBuffer(payload))
+func getBaselinkerJSON(url string, token string, payload []byte) ([]baselinkerProduct, error) {
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(payload))
 	if err != nil {
 		return nil, err
 	}
 
-	req.Header.Set("X-BLToken", baselinkerUrlToken)
+	req.Header.Set("X-BLToken", token)
 	req.Header.Set("Content-type", "application/x-www-form-urlencoded")
+	fmt.Println(req)
 	//defining client to connect to BL
 	client := &http.Client{}
 	response, err := client.Do(req)
@@ -96,34 +107,21 @@ func toBaselinkerValue(node N, key string) []baselinkerValue {
 	return values
 }
 
-func dataBaseQuery() {
-	dbq, err := sql.Open("mysql", "srv56775_APIgolang:APIgolang123!@tcp(h27.seohost.pl:3306)/srv56775_APIgolang")
-	if err != nil {
-		panic("Unable to connect to MySQL")
-	}
-
-	defer dbq.Close()
-
-	err = dbq.Ping()
-	if err != nil {
-		fmt.Println("Error verifying connection with DB")
-		panic(err.Error())
-	}
-	fmt.Println("Connection sucessful")
-	defer dbq.Close()
-
-	SQLQ := "INSERT INTO `test_table` (`ID`, `Stock`) VALUES (?, ?);"
-	impSQL, err := dbq.Prepare(SQLQ)
-	if err != nil {
+func main() {
+	if err := doMain(); err != nil {
 		panic(err)
 	}
-	defer impSQL.Close()
-
-	fmt.Println("Done")
 }
 
-func main() {
-	products, err := getBaselinkerJSON(payload)
+func doMain() error {
+	cred := Authorization{}
+
+	err := gonfig.GetConf("config/auth.json", &cred)
+	if err != nil {
+		panic("unable to set creadentials from json")
+	}
+
+	products, err := getBaselinkerJSON(cred.URL, cred.Token, payload)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "getJSON: %v\n", err)
 		os.Exit(1)
@@ -163,7 +161,5 @@ func main() {
 		}
 
 	}
-
-	// crtFile(resultJSON)
-	// dataBaseQuery()
+	return nil
 }
