@@ -191,7 +191,7 @@ func getOrders(body []byte) []bson.M {
 	return toDB
 }
 
-// create single value in DB
+// creates multiple docs in DB from given []interface{}
 func (mdb *MongoDB) dbCreateMulti(value []interface{}, uri, db, collection string) {
 	fmt.Println("Inserting values into DB")
 
