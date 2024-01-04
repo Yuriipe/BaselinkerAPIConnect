@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/joho/godotenv"
@@ -89,8 +90,8 @@ func setPayload(args string) []byte {
 }
 
 // getting JSON from BL
-func getBaselinkerJSON(url string, token string, payload []byte) ([]byte, error) {
-	fmt.Println("Getting stock and reserve values from BaseLinker")
+func getBaselinkerJSON(url, token string, payload []byte) ([]byte, error) {
+	fmt.Println("Getting values from BaseLinker")
 	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(payload))
 	if err != nil {
 		panic("bl request failed")
@@ -98,7 +99,6 @@ func getBaselinkerJSON(url string, token string, payload []byte) ([]byte, error)
 
 	req.Header.Set("X-BLToken", token)
 	req.Header.Set("Content-type", "application/x-www-form-urlencoded")
-	fmt.Println(req)
 	//defining client to connect to BL
 	client := &http.Client{}
 	response, err := client.Do(req)
@@ -140,7 +140,7 @@ func getStock(body []byte) []interface{} {
 	return toDB
 }
 
-func getPrice(body []byte) []interface{} {
+func getPrice(body []byte) []bson.M {
 	fmt.Println("Getting prices from response")
 	var prices BLPriceResponse
 	err := json.Unmarshal(body, &prices)
@@ -148,7 +148,7 @@ func getPrice(body []byte) []interface{} {
 		panic("unmarshal failed")
 	}
 
-	var toDB N
+	var toDB []bson.M
 	for _, product := range prices.ProductPrice {
 		var value float64
 		for name, price := range product.Prices {
@@ -163,7 +163,7 @@ func getPrice(body []byte) []interface{} {
 	return toDB
 }
 
-func getOrders(body []byte) []interface{} {
+func getOrders(body []byte) []bson.M {
 	fmt.Println("Getting orders from response")
 	var orders BLOrders
 	err := json.Unmarshal(body, &orders)
@@ -171,12 +171,16 @@ func getOrders(body []byte) []interface{} {
 		panic("unmarshal failed")
 	}
 
-	quantitySum := make(map[string]int)
+	quantitySum := make(map[int]int)
 	var orderMap primitive.M
-	var toDB N
+	var toDB []bson.M
 	for _, order := range orders.Orders {
 		for _, product := range order.OrderedProducts {
-			quantitySum[product.OrdProductID] += product.OrdQuantity
+			val, err := strconv.Atoi(product.OrdProductID)
+			if err != nil {
+				panic("conversion failed")
+			}
+			quantitySum[val] += product.OrdQuantity
 		}
 	}
 
@@ -188,7 +192,7 @@ func getOrders(body []byte) []interface{} {
 }
 
 // create single value in DB
-func (mdb *MongoDB) dbCreateMulti(value []interface{}, uri string, db string, collection string) {
+func (mdb *MongoDB) dbCreateMulti(value []interface{}, uri, db, collection string) {
 	fmt.Println("Inserting values into DB")
 
 	client, err := mongo.Connect(context.TODO(), options.Client().ApplyURI(uri))
@@ -204,13 +208,16 @@ func (mdb *MongoDB) dbCreateMulti(value []interface{}, uri string, db string, co
 
 	coll := mdb.cl.Database(db).Collection(collection)
 	coll.InsertMany(context.TODO(), value)
+
+	fmt.Println("Insert completed")
 }
 
 func (mdb *MongoDB) dbRead(value []interface{}, value2 interface{}) {
 
 }
-func (mdb *MongoDB) dbUpdate(uri string, db string, collection string) {
-	fmt.Println("starting update")
+
+func (mdb *MongoDB) dbUpdate(uri, db, collection string, update, filter bson.M) {
+	fmt.Println("Starting update")
 
 	client, err := mongo.Connect(context.TODO(), options.Client().ApplyURI(uri))
 	if err != nil {
@@ -221,14 +228,79 @@ func (mdb *MongoDB) dbUpdate(uri string, db string, collection string) {
 			panic(err)
 		}
 	}()
-	// update sequence for MongoDB, check manual for more
-	update := bson.M{"$set": bson.M{"stock2": 100}}
-	filter := bson.M{"stock2": bson.M{"$exists": true}}
+
+	opts := options.Update().SetUpsert(true)
 
 	mdb.cl = client
 	coll := mdb.cl.Database(db).Collection(collection)
-	coll.UpdateMany(context.TODO(), filter, update)
+	coll.UpdateMany(context.TODO(), filter, update, opts)
 
+	fmt.Println("Update completed")
+
+}
+
+func (mdb *MongoDB) dbUpdateFieldsFromBL(uri, database, collection, field string, productFieldMaps []bson.M) error {
+	if len(productFieldMaps) == 0 {
+		return nil
+	}
+	fmt.Printf("Started %s field update in DB", field)
+
+	client, err := mongo.Connect(context.TODO(), options.Client().ApplyURI(uri))
+	if err != nil {
+		panic(err)
+	}
+	defer func() {
+		if err := client.Disconnect(context.TODO()); err != nil {
+			panic(err)
+		}
+	}()
+
+	// Connect to the database and collection
+	db := client.Database(database)
+	coll := db.Collection(collection)
+
+	// Create a filter document
+	filter := bson.M{}
+	for _, productFieldMap := range productFieldMaps {
+		filter = bson.M{"_id": productFieldMap["_id"]}
+		fmt.Println(productFieldMap)
+		updateDoc := bson.M{"$set": bson.M{field: productFieldMap[field]}}
+		fmt.Println(updateDoc)
+		_, err := coll.UpdateOne(context.TODO(), filter, updateDoc)
+		if err != nil {
+			return err
+		}
+	}
+	fmt.Println("\nField update finished")
+
+	return nil
+}
+
+func (mdb *MongoDB) dbDeleteAllProducts(uri, database, collection string) error {
+	fmt.Println("Deleting values from DB")
+
+	client, err := mongo.Connect(context.TODO(), options.Client().ApplyURI(uri))
+	if err != nil {
+		panic(err)
+	}
+	defer func() {
+		if err := client.Disconnect(context.TODO()); err != nil {
+			panic(err)
+		}
+	}()
+	// Connect to the database and collection
+	db := client.Database(database)
+	coll := db.Collection(collection)
+
+	// Delete all products
+	_, err = coll.DeleteMany(context.TODO(), bson.M{})
+	if err != nil {
+		return err
+	}
+
+	fmt.Println("Cleanup successfully completed")
+
+	return nil
 }
 
 func getEnv(key string) string {
@@ -257,38 +329,47 @@ func doMain() error {
 		panic("loading payloadCfg.env failed")
 	}
 
-	// if err := godotenv.Load("config/mongoCfg.env"); err != nil {
-	// 	panic("loading mongoCfg.env failed")
-	// }
+	if err := godotenv.Load("config/mongoCfg.env"); err != nil {
+		panic("loading mongoCfg.env failed")
+	}
 
-	// uri := os.Getenv("MONGODB_URI")
-	// db := os.Getenv("DATABASE_NAME")
-	// collection := os.Getenv("COLLECTION_NAME")
+	uri := getEnv("MONGODB_URI")
+	db := getEnv("DATABASE_NAME")
+	collection := getEnv("COLLECTION_NAME")
+	mdb := MongoDB{}
 
 	// stock, err := getBaselinkerJSON(cred.URL, cred.Token, setPayload("getInventoryProductsStock"))
 	// if err != nil {
 	// 	panic(err)
 	// }
+
 	// price, err := getBaselinkerJSON(cred.URL, cred.Token, setPayload("getInventoryProductsPrices"))
 	// if err != nil {
 	// 	panic(err)
 	// }
 
-	// order, err := getBaselinkerJSON(cred.URL, cred.Token, setPayload("getOrders"))
-	// if err != nil {
-	// 	panic(err)
-	// }
+	order, err := getBaselinkerJSON(cred.URL, cred.Token, setPayload("getOrders"))
+	if err != nil {
+		panic(err)
+	}
 
 	// stocks := getStock(stock)
 	// prices := getPrice(price)
-	// orders := getOrders(order)
+	orders := getOrders(order)
 
-	// mdb := MongoDB{}
-	// fmt.Println(stocks...)
-	// fmt.Println(prices...)
-	// fmt.Println(orders...)
+	// updates prices fields in DB
+	// mdb.dbUpdateFieldsFromBL(uri, db, collection, "price", prices)
 
-	// mdb.dbCreateMulti(toDB)
+	// updates orders fields in DB
+	mdb.dbUpdateFieldsFromBL(uri, db, collection, "orders", orders)
+
+	// set DB order value to 0, executes on demand and after DB price update
+	// ordToZeroUpdate := bson.M{"$set": bson.M{"orders": 0}}
+	// ordToZeroFilter := bson.M{"orders": bson.M{"$exists": true}}
+	// mdb.dbUpdate(uri, db, collection, ordToZeroUpdate, ordToZeroFilter)
+
+	// mdb.dbDeleteAllProducts(uri, db, collection)
+	// mdb.dbCreateMulti(stocks, uri, db, collection)
 	// mdb.dbUpdate(uri, db, collection)
 
 	return nil
