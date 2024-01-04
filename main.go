@@ -368,9 +368,9 @@ func doMain() error {
 	// ordToZeroFilter := bson.M{"orders": bson.M{"$exists": true}}
 	// mdb.dbUpdate(uri, db, collection, ordToZeroUpdate, ordToZeroFilter)
 
-	// mdb.dbDeleteAllProducts(uri, db, collection)
 	// mdb.dbCreateMulti(stocks, uri, db, collection)
-	// mdb.dbUpdate(uri, db, collection)
+
+	// mdb.dbDeleteAllProducts(uri, db, collection)
 
 	return nil
 }
