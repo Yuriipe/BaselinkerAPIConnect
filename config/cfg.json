@@ -1,5 +1,5 @@
 {
-    "getInventoryProductsStock":{
+    {
         "method":"getInventoryProductsStock",
         "parameters":""
     },

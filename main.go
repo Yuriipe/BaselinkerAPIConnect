@@ -18,8 +18,6 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-var payload = []byte(`method=getInventoryProductsStock&parameters=%7B%22inventory_id%22%3A%2223251%22%7D`)
-
 type Authorization struct {
 	URL   string `json:"url"`
 	Token string `json:"token"`
@@ -31,51 +29,61 @@ type ProductStock struct {
 	Stock        map[string]int `json:"stock"`
 }
 
-type BLResponse struct {
+type BLStockResponse struct {
 	Status   string                  `json:"status"`
 	Products map[string]ProductStock `json:"products"`
 }
 
-type BLQuery struct {
-	pld *[]PayloadMethods
+type ProductPrice struct {
+	ProductID int                `json:"product_id"`
+	Prices    map[string]float64 `json:"prices"`
 }
 
-type Payload struct {
-	Method     string `json:"method"`
-	Parameters string `json:"parameters"`
+type BLPriceResponse struct {
+	ProductPrice map[string]ProductPrice `json:"products"`
 }
 
-// contains different baselinker APi queries, can be extended as needed
-type PayloadMethods struct {
-	GetInventoryProductsStock  []Payload `json:"getInventoryProductsStock"`
-	GetInventoryProductsPrices []Payload `json:"getInventoryProductsPrices"`
-	GetOrders                  []Payload `json:"getOrders"`
-	UpdateProductsPrices       []Payload `json:"updateProductsPrices"`
+type OrderedProducts struct {
+	OrdProductID string `json:"product_id"`
+	OrdQuantity  int    `json:"quantity"`
 }
 
-type PriceChanger struct {
-	StartProductAmount  int
-	FinishProductAmount int
+type Order struct {
+	OrderedProducts []OrderedProducts `json:"products"`
+}
+
+type BLOrders struct {
+	Orders []Order `json:"orders"`
 }
 
 type MongoDB struct {
 	cl *mongo.Client
 }
 
-func setPayload(Payload) ([]byte, error) {
-	cfg := Payload{}
-	err := gonfig.GetConf("config/cfg.json", &cfg)
-	if err != nil {
-		panic("unable to get method and parameters")
+type N []interface{}
+
+func setPayload(args string) []byte {
+	var methodVal, parametersVal string
+	switch args {
+	case "getInventoryProductsStock":
+		methodVal = getEnv("GIPS_METHOD")
+		parametersVal = getEnv("GIPS_PARAMETERS")
+	case "getInventoryProductsPrices":
+		methodVal = getEnv("GIPP_METHOD")
+		parametersVal = getEnv("GIPP_PARAMETERS")
+	case "getOrders":
+		methodVal = getEnv("GO_METHOD")
+		parametersVal = getEnv("GO_PARAMETERS")
+	case "updateProductsPrices":
+		methodVal = getEnv("UPP_METHOD")
+		parametersVal = getEnv("UPP_PARAMETERS")
 	}
 
-	mathodVal := os.Getenv(cfg.Method)
-	parametersVal := os.Getenv(cfg.Parameters)
-
 	payload := url.Values{}
-	method := payload.Add("method=", methodVal)
+	payload.Add("method", methodVal)
+	payload.Add("parameters", parametersVal)
 
-	return payload, nil
+	return []byte(payload.Encode())
 }
 
 // getting JSON from BL
@@ -105,15 +113,16 @@ func getBaselinkerJSON(url string, token string, payload []byte) ([]byte, error)
 	return body, nil
 }
 
-func stockUpdate(body []byte) ([]interface{}, error) {
-	fmt.Println("Preparing database insert")
-	var result BLResponse
-	err := json.Unmarshal(body, &result)
+func getStock(body []byte) []interface{} {
+	fmt.Println("Getting stock from response")
+	var stock BLStockResponse
+	err := json.Unmarshal(body, &stock)
 	if err != nil {
 		panic("unmarshal failed")
 	}
-	toDB := []interface{}{}
-	for _, product := range result.Products {
+
+	var toDB N
+	for _, product := range stock.Products {
 		reserve := 0
 		stock := 0
 		for _, resVal := range product.Reservations {
@@ -123,41 +132,61 @@ func stockUpdate(body []byte) ([]interface{}, error) {
 			stock += stVal
 		}
 
-		productMap := bson.M{"_id": product.ProductID, "stock": stock, "reserved": reserve, "stock2": 0, "reserved2": 0}
+		productMap := bson.M{"_id": product.ProductID, "stock": stock, "price": 0, "orders": 0}
 		toDB = append(toDB, productMap)
 	}
-	return toDB, nil
+	return toDB
 }
 
-// used for cron based stock and price, check and update
-func (bl *BLQuery) blQueryMenu(query string, method string, parameters []string) {
-	switch query {
-	case "getStock":
-		bl.blGetStock(method, parameters)
-	case "getProducts":
-		bl.blGetPrices(method, parameters)
-	case "setPrices":
-		bl.blSetPrices(method, parameters)
+func getPrice(body []byte) []interface{} {
+	fmt.Println("Getting prices from response")
+	var prices BLPriceResponse
+	err := json.Unmarshal(body, &prices)
+	if err != nil {
+		panic("unmarshal failed")
 	}
+
+	var toDB N
+	for _, product := range prices.ProductPrice {
+		var value float64
+		for name, price := range product.Prices {
+			if name == "22333" {
+				value = price
+			}
+		}
+
+		priceMap := bson.M{"_id": product.ProductID, "price": value}
+		toDB = append(toDB, priceMap)
+	}
+	return toDB
 }
 
-func (bl *BLQuery) blGetStock(mtd string, param []string) {}
+func getOrders(body []byte) []interface{} {
+	fmt.Println("Getting orders from response")
+	var orders BLOrders
+	err := json.Unmarshal(body, &orders)
+	if err != nil {
+		panic("unmarshal failed")
+	}
 
-func (bl *BLQuery) blGetPrices(mtd string, param []string) {}
-
-func (bl *BLQuery) blSetPrices(mtd string, param []string) {}
+	var quantity int
+	var productId string
+	var toDB N
+	for _, order := range orders.Orders {
+		for _, product := range order.OrderedProducts {
+			productId = product.OrdProductID
+			quantity += product.OrdQuantity
+		}
+		fmt.Println(productId, quantity)
+	}
+	orderMap := bson.M{"_id": productId, "orders": quantity}
+	toDB = append(toDB, orderMap)
+	return toDB
+}
 
 // create single value in DB
-func (mdb *MongoDB) dbCreateMulti(value []interface{}) {
+func (mdb *MongoDB) dbCreateMulti(value []interface{}, uri string, db string, collection string) {
 	fmt.Println("Inserting values into DB")
-
-	if err := godotenv.Load("cfg.env"); err != nil {
-		panic("unable to read from cfg.env")
-	}
-
-	uri := os.Getenv("MONGODB_URI")
-	db := os.Getenv("DATABASE_NAME")
-	collection := os.Getenv("COLLECTION_NAME")
 
 	client, err := mongo.Connect(context.TODO(), options.Client().ApplyURI(uri))
 	if err != nil {
@@ -177,15 +206,8 @@ func (mdb *MongoDB) dbCreateMulti(value []interface{}) {
 func (mdb *MongoDB) dbRead(value []interface{}, value2 interface{}) {
 
 }
-func (mdb *MongoDB) dbUpdate() {
+func (mdb *MongoDB) dbUpdate(uri string, db string, collection string) {
 	fmt.Println("starting update")
-	if err := godotenv.Load("cfg.env"); err != nil {
-		panic("unable to read from cfg.env")
-	}
-
-	uri := os.Getenv("MONGODB_URI")
-	db := os.Getenv("DATABASE_NAME")
-	collection := os.Getenv("COLLECTION_NAME")
 
 	client, err := mongo.Connect(context.TODO(), options.Client().ApplyURI(uri))
 	if err != nil {
@@ -206,6 +228,14 @@ func (mdb *MongoDB) dbUpdate() {
 
 }
 
+func getEnv(key string) string {
+	value := os.Getenv(key)
+	if value == "" {
+		panic(fmt.Sprintf("env variable %s is not set", key))
+	}
+	return value
+}
+
 func main() {
 	if err := doMain(); err != nil {
 		panic(err)
@@ -220,20 +250,41 @@ func doMain() error {
 		panic("unable to set creadentials from json")
 	}
 
-	response, err := getBaselinkerJSON(cred.URL, cred.Token, payload)
+	if err := godotenv.Load("config/payloadCfg.env"); err != nil {
+		panic("loading payloadCfg.env failed")
+	}
+
+	// if err := godotenv.Load("config/mongoCfg.env"); err != nil {
+	// 	panic("loading mongoCfg.env failed")
+	// }
+
+	// uri := os.Getenv("MONGODB_URI")
+	// db := os.Getenv("DATABASE_NAME")
+	// collection := os.Getenv("COLLECTION_NAME")
+
+	// stock, err := getBaselinkerJSON(cred.URL, cred.Token, setPayload("getInventoryProductsStock"))
+	// if err != nil {
+	// 	panic(err)
+	// }
+	// price, err := getBaselinkerJSON(cred.URL, cred.Token, setPayload("getInventoryProductsPrices"))
+	// if err != nil {
+	// 	panic(err)
+	// }
+	order, err := getBaselinkerJSON(cred.URL, cred.Token, setPayload("getOrders"))
 	if err != nil {
 		panic(err)
 	}
 
-	toDB, err := stockUpdate(response)
-	if err != nil {
-		panic("failed processing stock update")
-	}
+	// stocks := getStock(stock)
+	// prices := getPrice(price)
+	orders := getOrders(order)
 
-	mdb := MongoDB{}
-	fmt.Println(toDB...)
-	// mdb.dbCreateMulti(toDB)
-	mdb.dbUpdate()
+	// mdb := MongoDB{}
+	// fmt.Println(stocks...)
+	// fmt.Println(prices...)
+	fmt.Println(orders...)
+	// // mdb.dbCreateMulti(toDB)
+	// mdb.dbUpdate(uri, db, collection)
 
 	return nil
 }
