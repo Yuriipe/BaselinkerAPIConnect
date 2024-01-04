@@ -272,20 +272,22 @@ func doMain() error {
 	// if err != nil {
 	// 	panic(err)
 	// }
-	order, err := getBaselinkerJSON(cred.URL, cred.Token, setPayload("getOrders"))
-	if err != nil {
-		panic(err)
-	}
+
+	// order, err := getBaselinkerJSON(cred.URL, cred.Token, setPayload("getOrders"))
+	// if err != nil {
+	// 	panic(err)
+	// }
 
 	// stocks := getStock(stock)
 	// prices := getPrice(price)
-	orders := getOrders(order)
+	// orders := getOrders(order)
 
 	// mdb := MongoDB{}
 	// fmt.Println(stocks...)
 	// fmt.Println(prices...)
-	fmt.Println(orders...)
-	// // mdb.dbCreateMulti(toDB)
+	// fmt.Println(orders...)
+
+	// mdb.dbCreateMulti(toDB)
 	// mdb.dbUpdate(uri, db, collection)
 
 	return nil
