@@ -63,6 +63,7 @@ type MongoDB struct {
 
 type N []interface{}
 
+// payload for getBaselinkerJSON queries
 func setPayload(args string) []byte {
 	var methodVal, parametersVal string
 	switch args {
