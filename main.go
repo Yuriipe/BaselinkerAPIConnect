@@ -14,6 +14,7 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/tkanos/gonfig"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
@@ -169,18 +170,19 @@ func getOrders(body []byte) []interface{} {
 		panic("unmarshal failed")
 	}
 
-	var quantity int
-	var productId string
+	quantitySum := make(map[string]int)
+	var orderMap primitive.M
 	var toDB N
 	for _, order := range orders.Orders {
 		for _, product := range order.OrderedProducts {
-			productId = product.OrdProductID
-			quantity += product.OrdQuantity
+			quantitySum[product.OrdProductID] += product.OrdQuantity
 		}
-		fmt.Println(productId, quantity)
 	}
-	orderMap := bson.M{"_id": productId, "orders": quantity}
-	toDB = append(toDB, orderMap)
+
+	for k, v := range quantitySum {
+		orderMap = bson.M{"_id": k, "orders": v}
+		toDB = append(toDB, orderMap)
+	}
 	return toDB
 }
 
