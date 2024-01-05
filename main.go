@@ -63,8 +63,6 @@ type MongoDB struct {
 	cl *mongo.Client
 }
 
-type N []interface{}
-
 // payload for getBaselinkerJSON queries
 func setPayload(args string) []byte {
 	// set date X days before current, for getting orders
@@ -138,7 +136,7 @@ func getStock(body []byte) []interface{} {
 		panic("unmarshal failed")
 	}
 
-	var toDB N
+	var toDB []interface{}
 	for _, product := range stock.Products {
 		reserve := 0
 		stock := 0
@@ -333,6 +331,7 @@ func main() {
 }
 
 func doMain() error {
+
 	cred := Authorization{}
 
 	err := gonfig.GetConf("config/auth.json", &cred)
