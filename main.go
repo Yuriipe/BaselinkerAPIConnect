@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"strconv"
+	"time"
 
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/joho/godotenv"
@@ -66,6 +67,19 @@ type N []interface{}
 
 // payload for getBaselinkerJSON queries
 func setPayload(args string) []byte {
+	// set date X days before current, for getting orders
+	days, err := strconv.Atoi(getEnv("GO_DAYSBEFORE"))
+	if err != nil {
+		panic("failed getting days env from payload.env")
+	}
+	date := time.Now().AddDate(0, 0, days).Unix()
+	setParameter := map[string]interface{}{"date_confirmed_from": date, "get_unconfirmed_orders": false}
+	jsonData, err := json.Marshal(setParameter)
+	if err != nil {
+		panic("payload parameter marshal failed")
+	}
+	getOrdersParameters := string(jsonData)
+
 	var methodVal, parametersVal string
 	switch args {
 	case "getInventoryProductsStock":
@@ -76,12 +90,13 @@ func setPayload(args string) []byte {
 		parametersVal = getEnv("GIPP_PARAMETERS")
 	case "getOrders":
 		methodVal = getEnv("GO_METHOD")
-		parametersVal = getEnv("GO_PARAMETERS")
+		parametersVal = getOrdersParameters
 	case "updateProductsPrices":
 		methodVal = getEnv("UPP_METHOD")
 		parametersVal = getEnv("UPP_PARAMETERS")
 	}
 
+	fmt.Println(getOrdersParameters)
 	payload := url.Values{}
 	payload.Add("method", methodVal)
 	payload.Add("parameters", parametersVal)
@@ -333,10 +348,10 @@ func doMain() error {
 		panic("loading mongoCfg.env failed")
 	}
 
-	uri := getEnv("MONGODB_URI")
-	db := getEnv("DATABASE_NAME")
-	collection := getEnv("COLLECTION_NAME")
-	mdb := MongoDB{}
+	// uri := getEnv("MONGODB_URI")
+	// db := getEnv("DATABASE_NAME")
+	// collection := getEnv("COLLECTION_NAME")
+	// mdb := MongoDB{}
 
 	// stock, err := getBaselinkerJSON(cred.URL, cred.Token, setPayload("getInventoryProductsStock"))
 	// if err != nil {
@@ -356,12 +371,13 @@ func doMain() error {
 	// stocks := getStock(stock)
 	// prices := getPrice(price)
 	orders := getOrders(order)
+	fmt.Println(orders)
 
 	// updates prices fields in DB
 	// mdb.dbUpdateFieldsFromBL(uri, db, collection, "price", prices)
 
 	// updates orders fields in DB
-	mdb.dbUpdateFieldsFromBL(uri, db, collection, "orders", orders)
+	// mdb.dbUpdateFieldsFromBL(uri, db, collection, "orders", orders)
 
 	// set DB order value to 0, executes on demand and after DB price update
 	// ordToZeroUpdate := bson.M{"$set": bson.M{"orders": 0}}
