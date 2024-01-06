@@ -322,7 +322,6 @@ func (mdb *MongoDB) dbUpdateFieldsFromBL(uri, database, collection, field string
 		filter = bson.M{"_id": productFieldMap["_id"]}
 		fmt.Println(productFieldMap)
 		updateDoc := bson.M{"$set": bson.M{field: productFieldMap[field]}}
-		fmt.Println(updateDoc)
 		_, err := coll.UpdateOne(context.TODO(), filter, updateDoc)
 		if err != nil {
 			return err
