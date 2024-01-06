@@ -128,6 +128,7 @@ func getBaselinkerJSON(url, token string, payload []byte) ([]byte, error) {
 	return body, nil
 }
 
+// returns stock values from BL
 func getStock(body []byte) []interface{} {
 	fmt.Println("Getting stock from response")
 	var stock BLStockResponse
@@ -153,6 +154,7 @@ func getStock(body []byte) []interface{} {
 	return toDB
 }
 
+// returns price values from BL
 func getPrice(body []byte) []bson.M {
 	fmt.Println("Getting prices from response")
 	var prices BLPriceResponse
@@ -176,6 +178,7 @@ func getPrice(body []byte) []bson.M {
 	return toDB
 }
 
+// returns product amount from orders of required period from BL
 func getOrders(body []byte) []bson.M {
 	fmt.Println("Getting orders from response")
 	var orders BLOrders
@@ -225,12 +228,68 @@ func (mdb *MongoDB) dbCreateMulti(value []interface{}, uri, db, collection strin
 	fmt.Println("Insert completed")
 }
 
-func (mdb *MongoDB) dbRead(value []interface{}, value2 interface{}) {
+// updates field values based on other (integer) field values
+func (mdb *MongoDB) dbConditionalUpdate(uri, db, collection string, priceMult []float64) {
+	fmt.Println("Conditional update logic start")
+	client, err := mongo.Connect(context.TODO(), options.Client().ApplyURI(uri))
+	if err != nil {
+		panic(err)
+	}
+	defer func() {
+		if err := client.Disconnect(context.TODO()); err != nil {
+			panic(err)
+		}
+	}()
 
+	filter := bson.D{
+		{"orders", bson.D{{"$gte", 0}, {"$lt", 10}}},
+		{"stock", bson.D{{"$gt", 50}}},
+	}
+
+	// Set up the update with conditional logic
+	update := bson.D{
+		{"$set", bson.D{
+			{"price", bson.D{
+				{"$cond", bson.A{
+					bson.D{{"$and", bson.A{
+						bson.D{{"$gt", bson.A{"$orders", 0}}},
+						bson.D{{"$lt", bson.A{"$orders", 10}}},
+						bson.D{{"$gt", bson.A{"$stock", 50}}},
+					}}},
+					bson.D{{"$multiply", bson.A{"$price", priceMult[0]}}},
+					bson.D{{"$cond", bson.A{
+						bson.D{{"$and", bson.A{
+							bson.D{{"$gt", bson.A{"$orders", 10}}},
+							bson.D{{"$gt", bson.A{"$stock", 50}}},
+						}}},
+						bson.D{{"$multiply", bson.A{"$price", priceMult[1]}}},
+						bson.D{{"$cond", bson.A{
+							bson.D{{"$and", bson.A{
+								bson.D{{"$eq", bson.A{"$orders", 0}}},
+								bson.D{{"$gt", bson.A{"$stock", 50}}},
+							}}},
+							bson.D{{"$multiply", bson.A{"$price", priceMult[2]}}},
+							"$price",
+						}}},
+					}}},
+				}},
+			}},
+		}},
+	}
+
+	mdb.cl = client
+	coll := mdb.cl.Database(db).Collection(collection)
+	result, err := coll.UpdateMany(context.TODO(), filter, update)
+	if err != nil {
+		panic("price update failed")
+	}
+
+	fmt.Printf("Price values succesfully updated\n Matched document: %v\n Modified documents: %v\n", result.MatchedCount, result.ModifiedCount)
 }
 
+// updates db field value based on filter and update options
 func (mdb *MongoDB) dbUpdate(uri, db, collection string, update, filter bson.M) {
-	fmt.Println("Starting update")
+	fmt.Println("Update start")
 
 	client, err := mongo.Connect(context.TODO(), options.Client().ApplyURI(uri))
 	if err != nil {
@@ -242,16 +301,18 @@ func (mdb *MongoDB) dbUpdate(uri, db, collection string, update, filter bson.M) 
 		}
 	}()
 
-	opts := options.Update().SetUpsert(true)
-
 	mdb.cl = client
 	coll := mdb.cl.Database(db).Collection(collection)
-	coll.UpdateMany(context.TODO(), filter, update, opts)
+	result, err := coll.UpdateMany(context.TODO(), filter, update)
+	if err != nil {
+		panic("update failed")
+	}
 
-	fmt.Println("Update completed")
+	fmt.Printf("Update completed\nDocuments updated: %v\n", result.ModifiedCount)
 
 }
 
+// set db field values based on BL values
 func (mdb *MongoDB) dbUpdateFieldsFromBL(uri, database, collection, field string, productFieldMaps []bson.M) error {
 	if len(productFieldMaps) == 0 {
 		return nil
@@ -289,6 +350,7 @@ func (mdb *MongoDB) dbUpdateFieldsFromBL(uri, database, collection, field string
 	return nil
 }
 
+// drops all documents in chosen collection
 func (mdb *MongoDB) dbDeleteAllProducts(uri, database, collection string) error {
 	fmt.Println("Deleting values from DB")
 
@@ -339,51 +401,52 @@ func doMain() error {
 		panic("unable to set creadentials from json")
 	}
 
-	if err := godotenv.Load("config/payloadCfg.env"); err != nil {
+	if err := godotenv.Load("config/payloadCfg.env", "config/mongoCfg.env"); err != nil {
 		panic("loading payloadCfg.env failed")
 	}
 
-	if err := godotenv.Load("config/mongoCfg.env"); err != nil {
-		panic("loading mongoCfg.env failed")
+	uri := getEnv("MONGODB_URI")
+	db := getEnv("DATABASE_NAME")
+	collection := getEnv("COLLECTION_NAME")
+	mdb := MongoDB{}
+
+	stock, err := getBaselinkerJSON(cred.URL, cred.Token, setPayload("getInventoryProductsStock"))
+	if err != nil {
+		panic(err)
 	}
 
-	// uri := getEnv("MONGODB_URI")
-	// db := getEnv("DATABASE_NAME")
-	// collection := getEnv("COLLECTION_NAME")
-	// mdb := MongoDB{}
-
-	// stock, err := getBaselinkerJSON(cred.URL, cred.Token, setPayload("getInventoryProductsStock"))
-	// if err != nil {
-	// 	panic(err)
-	// }
-
-	// price, err := getBaselinkerJSON(cred.URL, cred.Token, setPayload("getInventoryProductsPrices"))
-	// if err != nil {
-	// 	panic(err)
-	// }
+	price, err := getBaselinkerJSON(cred.URL, cred.Token, setPayload("getInventoryProductsPrices"))
+	if err != nil {
+		panic(err)
+	}
 
 	order, err := getBaselinkerJSON(cred.URL, cred.Token, setPayload("getOrders"))
 	if err != nil {
 		panic(err)
 	}
 
-	// stocks := getStock(stock)
-	// prices := getPrice(price)
+	stocks := getStock(stock)
+	prices := getPrice(price)
 	orders := getOrders(order)
-	fmt.Println(orders)
+	// fmt.Println(orders)
+
+	// creates products from BL in db and sets stock values
+	mdb.dbCreateMulti(stocks, uri, db, collection)
 
 	// updates prices fields in DB
-	// mdb.dbUpdateFieldsFromBL(uri, db, collection, "price", prices)
+	mdb.dbUpdateFieldsFromBL(uri, db, collection, "price", prices)
 
 	// updates orders fields in DB
-	// mdb.dbUpdateFieldsFromBL(uri, db, collection, "orders", orders)
+	mdb.dbUpdateFieldsFromBL(uri, db, collection, "orders", orders)
 
 	// set DB order value to 0, executes on demand and after DB price update
 	// ordToZeroUpdate := bson.M{"$set": bson.M{"orders": 0}}
-	// ordToZeroFilter := bson.M{"orders": bson.M{"$exists": true}}
+	// ordToZeroFilter := bson.M{"orders": bson.M{"$gt": 0}}
 	// mdb.dbUpdate(uri, db, collection, ordToZeroUpdate, ordToZeroFilter)
 
-	// mdb.dbCreateMulti(stocks, uri, db, collection)
+	// set DB price value according to price update logic
+	// multiplicator := []float64{1.1, 1.2, 0.9}
+	// mdb.dbConditionalUpdate(uri, db, collection, multiplicator)
 
 	// mdb.dbDeleteAllProducts(uri, db, collection)
 
