@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -63,7 +64,12 @@ type MongoDB struct {
 	cl *mongo.Client
 }
 
-// payload for getBaselinkerJSON queries
+type UpdateFilterPair struct {
+	Update bson.D
+	Filter bson.D
+}
+
+// payload for baselinkerConnect queries
 func setPayload(args string) []byte {
 	// set date X days before current, for getting orders
 	days, err := strconv.Atoi(getEnv("GO_DAYSBEFORE"))
@@ -94,7 +100,6 @@ func setPayload(args string) []byte {
 		parametersVal = getEnv("UPP_PARAMETERS")
 	}
 
-	fmt.Println(getOrdersParameters)
 	payload := url.Values{}
 	payload.Add("method", methodVal)
 	payload.Add("parameters", parametersVal)
@@ -103,7 +108,7 @@ func setPayload(args string) []byte {
 }
 
 // getting JSON from BL
-func getBaselinkerJSON(url, token string, payload []byte) ([]byte, error) {
+func baselinkerConnect(url, token string, payload []byte) ([]byte, error) {
 	fmt.Println("Getting values from BaseLinker")
 	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(payload))
 	if err != nil {
@@ -228,9 +233,12 @@ func (mdb *MongoDB) dbCreateMulti(value []interface{}, uri, db, collection strin
 	fmt.Println("Insert completed")
 }
 
-// updates field values based on other (integer) field values
-func (mdb *MongoDB) dbConditionalUpdate(uri, db, collection string, priceMult []float64) {
-	fmt.Println("Conditional update logic start")
+// updates db field value based on filter and update options
+func (mdb *MongoDB) dbUpdate(uri, db, collection string, update, filter bson.D) {
+	fmt.Println("Update start")
+	fmt.Println(filter)
+	fmt.Println(update)
+
 	client, err := mongo.Connect(context.TODO(), options.Client().ApplyURI(uri))
 	if err != nil {
 		panic(err)
@@ -241,54 +249,19 @@ func (mdb *MongoDB) dbConditionalUpdate(uri, db, collection string, priceMult []
 		}
 	}()
 
-	filter := bson.D{
-		{"orders", bson.D{{"$gte", 0}, {"$lt", 10}}},
-		{"stock", bson.D{{"$gt", 50}}},
-	}
-
-	// Set up the update with conditional logic
-	update := bson.D{
-		{"$set", bson.D{
-			{"price", bson.D{
-				{"$cond", bson.A{
-					bson.D{{"$and", bson.A{
-						bson.D{{"$gt", bson.A{"$orders", 0}}},
-						bson.D{{"$lt", bson.A{"$orders", 10}}},
-						bson.D{{"$gt", bson.A{"$stock", 50}}},
-					}}},
-					bson.D{{"$multiply", bson.A{"$price", priceMult[0]}}},
-					bson.D{{"$cond", bson.A{
-						bson.D{{"$and", bson.A{
-							bson.D{{"$gt", bson.A{"$orders", 10}}},
-							bson.D{{"$gt", bson.A{"$stock", 50}}},
-						}}},
-						bson.D{{"$multiply", bson.A{"$price", priceMult[1]}}},
-						bson.D{{"$cond", bson.A{
-							bson.D{{"$and", bson.A{
-								bson.D{{"$eq", bson.A{"$orders", 0}}},
-								bson.D{{"$gt", bson.A{"$stock", 50}}},
-							}}},
-							bson.D{{"$multiply", bson.A{"$price", priceMult[2]}}},
-							"$price",
-						}}},
-					}}},
-				}},
-			}},
-		}},
-	}
-
 	mdb.cl = client
 	coll := mdb.cl.Database(db).Collection(collection)
 	result, err := coll.UpdateMany(context.TODO(), filter, update)
 	if err != nil {
-		panic("price update failed")
+		panic(err)
 	}
 
 	fmt.Printf("Price values succesfully updated\n Matched document: %v\n Modified documents: %v\n", result.MatchedCount, result.ModifiedCount)
+
 }
 
-// updates db field value based on filter and update options
-func (mdb *MongoDB) dbUpdate(uri, db, collection string, update, filter bson.M) {
+// returns product id's with prices
+func (mdb *MongoDB) getFromDB(uri, db, collection string) {
 	fmt.Println("Update start")
 
 	client, err := mongo.Connect(context.TODO(), options.Client().ApplyURI(uri))
@@ -303,12 +276,22 @@ func (mdb *MongoDB) dbUpdate(uri, db, collection string, update, filter bson.M) 
 
 	mdb.cl = client
 	coll := mdb.cl.Database(db).Collection(collection)
-	result, err := coll.UpdateMany(context.TODO(), filter, update)
+	// Find documents
+	cursor, err := coll.Find(context.Background(), bson.M{}, options.Find().SetProjection(bson.M{"_id": 1, "price": 1}))
 	if err != nil {
-		panic("update failed")
+		panic(err)
 	}
 
-	fmt.Printf("Update completed\nDocuments updated: %v\n", result.ModifiedCount)
+	defer cursor.Close(context.Background())
+
+	for cursor.Next(context.Background()) {
+		var result bson.M
+		if err := cursor.Decode(&result); err != nil {
+			panic(err)
+		}
+
+		fmt.Println(result)
+	}
 
 }
 
@@ -386,13 +369,60 @@ func getEnv(key string) string {
 	return value
 }
 
+func artLogo() {
+	art := `
+	/***
+	*    __________    _____    ___________________.____    .___ _______   ____  __.____________________ 
+	*    \______   \  /  _  \  /   _____|_   _____/|    |   |   |\      \ |    |/ _|\_   _____|______   \
+	*     |    |  _/ /  /_\  \ \_____  \ |    __)_ |    |   |   |/   |   \|      <   |    __)_ |       _/
+	*     |    |   \/    |    \/        \|        \|    |___|   /    |    \    |  \  |        \|    |   \
+	*     |______  /\____|__  /_______  /_______  /|_______ \___\____|__  /____|__ \/_______  /|____|_  /
+	*            \/         \/        \/        \/         \/           \/        \/        \/        \/ 
+	*                                                                                                    
+	*        .__                                                                                         
+	*      __|  |___                                                                                     
+	*     /__    __/                                                                                     
+	*        |__|                                                                                        
+	*                                                                                                    
+	*       _____   ________    _______    ________ ________    ________ __________                      
+	*      /     \  \_____  \   \      \  /  _____/ \_____  \   \______ \\______   \                     
+	*     /  \ /  \  /   |   \  /   |   \/   \  ___  /   |   \   |    |  \|    |  _/                     
+	*    /    Y    \/    |    \/    |    \    \_\  \/    |    \  |        \    |   \                     
+	*    \____|__  /\_______  /\____|__  /\______  /\_______  / /_______  /______  /                     
+	*            \/         \/         \/        \/         \/          \/       \/                      
+	*/
+	`
+	fmt.Println(art)
+}
+
+func showMenu() {
+	fmt.Println("1 ---------------------Get prices from DB")
+	fmt.Println("2 ------------Update product prices in DB")
+	fmt.Println("3 ---Update orders from past 7 days in DB")
+	fmt.Println("4 ---------------------Reset order values")
+	fmt.Println("5 ----Run price update logic in DB and BL")
+	fmt.Println("9 ------------Delete all products from DB")
+	fmt.Println("0 -----------------Exit------------------")
+}
+
+func returnToMenu() {
+	var returnChoice string
+	fmt.Println("Do you want to return to the menu? y/n")
+	fmt.Scan(&returnChoice)
+	if returnChoice != "y" {
+		fmt.Println("Exiting.....")
+		os.Exit(0)
+	}
+}
+
 func main() {
 	if err := doMain(); err != nil {
-		panic(err)
+		log.Fatalln(err)
 	}
 }
 
 func doMain() error {
+	artLogo()
 
 	cred := Authorization{}
 
@@ -410,45 +440,85 @@ func doMain() error {
 	collection := getEnv("COLLECTION_NAME")
 	mdb := MongoDB{}
 
-	stock, err := getBaselinkerJSON(cred.URL, cred.Token, setPayload("getInventoryProductsStock"))
-	if err != nil {
-		panic(err)
-	}
-
-	price, err := getBaselinkerJSON(cred.URL, cred.Token, setPayload("getInventoryProductsPrices"))
-	if err != nil {
-		panic(err)
-	}
-
-	order, err := getBaselinkerJSON(cred.URL, cred.Token, setPayload("getOrders"))
-	if err != nil {
-		panic(err)
-	}
-
-	stocks := getStock(stock)
-	prices := getPrice(price)
-	orders := getOrders(order)
-	// fmt.Println(orders)
-
 	// creates products from BL in db and sets stock values
-	mdb.dbCreateMulti(stocks, uri, db, collection)
+	// stock, err := baselinkerConnect(cred.URL, cred.Token, setPayload("getInventoryProductsStock"))
+	// if err != nil {
+	// 	panic(err)
+	// }
+	// stocks := getStock(stock)
+	// mdb.dbCreateMulti(stocks, uri, db, collection)
 
-	// updates prices fields in DB
-	mdb.dbUpdateFieldsFromBL(uri, db, collection, "price", prices)
-
-	// updates orders fields in DB
-	mdb.dbUpdateFieldsFromBL(uri, db, collection, "orders", orders)
-
-	// set DB order value to 0, executes on demand and after DB price update
-	// ordToZeroUpdate := bson.M{"$set": bson.M{"orders": 0}}
-	// ordToZeroFilter := bson.M{"orders": bson.M{"$gt": 0}}
-	// mdb.dbUpdate(uri, db, collection, ordToZeroUpdate, ordToZeroFilter)
-
-	// set DB price value according to price update logic
-	// multiplicator := []float64{1.1, 1.2, 0.9}
-	// mdb.dbConditionalUpdate(uri, db, collection, multiplicator)
-
-	// mdb.dbDeleteAllProducts(uri, db, collection)
+	var choice int
+	for {
+		showMenu()
+		fmt.Println("Type your choice number and press \"Enter\" to confirm")
+		fmt.Scan(&choice)
+		switch choice {
+		case 1:
+			//updates product prices in BL
+			mdb.getFromDB(uri, db, collection)
+		case 2:
+			// updates prices fields in DB
+			price, err := baselinkerConnect(cred.URL, cred.Token, setPayload("getInventoryProductsPrices"))
+			if err != nil {
+				panic(err)
+			}
+			prices := getPrice(price)
+			mdb.dbUpdateFieldsFromBL(uri, db, collection, "price", prices)
+		case 3:
+			// updates orders fields in DB
+			order, err := baselinkerConnect(cred.URL, cred.Token, setPayload("getOrders"))
+			if err != nil {
+				panic(err)
+			}
+			orders := getOrders(order)
+			mdb.dbUpdateFieldsFromBL(uri, db, collection, "orders", orders)
+		case 4:
+			// set DB order value to 0, executes on demand and after DB price update
+			ordToZeroUpdate := bson.D{{"$set", bson.M{"orders": 0}}}
+			ordToZeroFilter := bson.D{{"orders", bson.M{"$gt": 0}}}
+			mdb.dbUpdate(uri, db, collection, ordToZeroUpdate, ordToZeroFilter)
+		case 5:
+			// set DB price value according to price update logic
+			pairs := []UpdateFilterPair{
+				{
+					Update: bson.D{{"$mul", bson.D{{"price", 1.1}}}},
+					Filter: bson.D{{"stock", bson.M{"$gt": 50}}, {"orders", bson.M{"$gt": 0, "$lt": 10}}},
+				},
+				{
+					Update: bson.D{{"$mul", bson.D{{"price", 1.2}}}},
+					Filter: bson.D{{"stock", bson.M{"$gt": 50}}, {"orders", bson.M{"$gt": 10}}},
+				},
+				{
+					Update: bson.D{{"$mul", bson.D{{"price", 0.9}}}},
+					Filter: bson.D{{"stock", bson.M{"$gt": 50}}, {"orders", bson.M{"$eq": 0}}},
+				},
+			}
+			for _, pair := range pairs {
+				mdb.dbUpdate(uri, db, collection, pair.Update, pair.Filter)
+			}
+		case 9:
+			mdb.dbDeleteAllProducts(uri, db, collection)
+		case 0:
+			var confirm string
+			fmt.Println("Confirm exiting y/n")
+			fmt.Scan(&confirm)
+			if confirm != "y" {
+				returnToMenu()
+			} else {
+				fmt.Println("Exiting.....")
+				os.Exit(0)
+			}
+		default:
+			fmt.Println("Please make the valid choice")
+			returnToMenu()
+		}
+		if choice != 4 {
+			returnToMenu()
+		} else {
+			break
+		}
+	}
 
 	return nil
 }
