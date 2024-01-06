@@ -441,12 +441,12 @@ func doMain() error {
 	mdb := MongoDB{}
 
 	// creates products from BL in db and sets stock values
-	// stock, err := baselinkerConnect(cred.URL, cred.Token, setPayload("getInventoryProductsStock"))
-	// if err != nil {
-	// 	panic(err)
-	// }
-	// stocks := getStock(stock)
-	// mdb.dbCreateMulti(stocks, uri, db, collection)
+	stock, err := baselinkerConnect(cred.URL, cred.Token, setPayload("getInventoryProductsStock"))
+	if err != nil {
+		panic(err)
+	}
+	stocks := getStock(stock)
+	mdb.dbCreateMulti(stocks, uri, db, collection)
 
 	var choice int
 	for {
