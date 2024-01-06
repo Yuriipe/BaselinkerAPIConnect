@@ -236,8 +236,6 @@ func (mdb *MongoDB) dbCreateMulti(value []interface{}, uri, db, collection strin
 // updates db field value based on filter and update options
 func (mdb *MongoDB) dbUpdate(uri, db, collection string, update, filter bson.D) {
 	fmt.Println("Update start")
-	fmt.Println(filter)
-	fmt.Println(update)
 
 	client, err := mongo.Connect(context.TODO(), options.Client().ApplyURI(uri))
 	if err != nil {
